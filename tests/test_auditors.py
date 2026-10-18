@@ -83,6 +83,19 @@ class RetrievalAuditTest(unittest.TestCase):
         layer = retrieval_audit.audit(chunks, questions, ranking)
         self.assertEqual(layer.count(model.BLOCKER), 1)
 
+    def test_regression_between_layers_is_warned(self):
+        """第二层比第一层差，必须报出来。这条是破坏实验 M5 存活后补的。"""
+        chunks = self._write([{"id": 0, "text": "甲"}, {"id": 1, "text": "乙"}])
+        questions = self._write([{"id": 1, "q": "一问", "gt_ids": [0]}])
+        ranking = self._write([
+            {"qid": 1, "layer": "base", "ids": [0, 1]},    # 答案排第 1
+            {"qid": 1, "layer": "worse", "ids": [1, 0]},   # 答案掉到第 2
+        ])
+        layer = retrieval_audit.audit(chunks, questions, ranking)
+        whats = " ".join(f.what for f in layer.findings)
+        self.assertIn("往后退", whats)
+        self.assertEqual(layer.count(model.WARN), 1)
+
 
 class Bm25AdapterTest(unittest.TestCase):
     def test_tokenize_uses_char_bigrams(self):

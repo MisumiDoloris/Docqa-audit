@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+report.md
+demo/report.md
+.venv/
+.venv-light/
+wheels/

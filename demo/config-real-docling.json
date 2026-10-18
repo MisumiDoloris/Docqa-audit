@@ -1,0 +1,5 @@
+{
+  "project": "示例工程资料（Docling 底座，只跑解析层）",
+  "parse": {"file": "parse/real_docling.md"},
+  "out": "report_real_docling.md"
+}

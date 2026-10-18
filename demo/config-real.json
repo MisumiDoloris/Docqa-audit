@@ -1,0 +1,5 @@
+{
+  "project": "示例工程资料（先只跑解析层）",
+  "parse": {"file": "parse/real.md"},
+  "out": "report_real.md"
+}

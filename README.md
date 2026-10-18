@@ -75,6 +75,18 @@ python3 -m unittest discover -s tests -v
 - **markitdown**：默认。快、依赖小、电子版 PDF 够用。它管不了扫描件。
 - **docling**：可选，`--tool docling`。版面与表格更准，带 OCR，适合扫描件。
 
+检索侧也是一个底座，默认 **rank_bm25**：
+
+```bash
+.venv/bin/pip install rank_bm25
+.venv/bin/python -m docqa_audit rank --chunks chunks.jsonl \
+    --questions questions.jsonl --out ranking.jsonl -k 10
+```
+
+配置里写 `"ranker": "bm25"` 且不给 `ranking` 文件，`run` 会当场算一遍排位，不用先生成文件。
+
+**中文切词这里用了汉字二元组**（「合格证编号」切成 合格/格证/证编/编号），不引分词库。糙但稳，零额外依赖。代价是它认不出「合格证」是一个词，同义改写会丢分。要更好就接 jieba 或自己的词表，接口不用改，换 `tokenize` 就行。
+
 **装 Docling 踩过的四个坑，都写进 `scripts/install_cpu_docling.sh` 了，照着跑能一次过。**
 
 1. PyPI 上那支 torch 轮子是 CUDA 版，装的时候会拖 nvidia-cudnn / cublas / triton 好几个 G，装完 `import torch` 还要找 `libcublasLt.so`，找不到就炸。必须用 `download.pytorch.org/whl/cpu` 的 `+cpu` 轮子，196MB，实测本机直连这个域名是通的，不用代理。

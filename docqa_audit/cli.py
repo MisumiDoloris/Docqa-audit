@@ -29,9 +29,16 @@ def run(config_path):
 
     if "retrieval" in cfg:
         r = cfg["retrieval"]
+        rows = None
+        if r.get("ranker") == "bm25" and not r.get("ranking"):
+            from .adapters import rank_bm25_adapter
+            from .auditors.retrieval_audit import _load_jsonl
+            rows = rank_bm25_adapter.rank(_load_jsonl(r["chunks"]), _load_jsonl(r["questions"]),
+                                          k=int(r.get("k", 10)))
         layers.append(retrieval_audit.audit(
             r["chunks"], r["questions"], r.get("ranking"),
             ks=tuple(r.get("ks", (1, 3, 5))),
+            ranking_rows=rows,
         ))
 
     if "claims" in cfg:
@@ -68,6 +75,17 @@ def convert(pdf_path, out_path, tool="markitdown"):
     return 0
 
 
+def rank(chunks_path, questions_path, out_path, k=10, tool="bm25"):
+    """跑一次检索，把排位写成 ranking.jsonl，格式跟手给的一致。"""
+    if tool != "bm25":
+        raise SystemExit(f"不认识这个检索底座：{tool}（目前只有 bm25）")
+    from .adapters import rank_bm25_adapter as adapter
+
+    rows = adapter.write_ranking(chunks_path, questions_path, out_path, k=k)
+    print(f"[已写入] {out_path}（{len(rows)} 题排位，top{k}）")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="docqa-audit", description="中文文档问答的三层验收")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -81,11 +99,20 @@ def main(argv=None):
     p_cv.add_argument("--tool", default="markitdown", choices=["markitdown", "docling"],
                       help="用哪个底座解析，默认 markitdown（快、纯 python、无 OCR）")
 
+    p_rk = sub.add_parser("rank", help="跑一次检索，产出排位文件")
+    p_rk.add_argument("--chunks", required=True)
+    p_rk.add_argument("--questions", required=True)
+    p_rk.add_argument("--out", required=True)
+    p_rk.add_argument("-k", type=int, default=10)
+    p_rk.add_argument("--tool", default="bm25", choices=["bm25"])
+
     args = ap.parse_args(argv)
     if args.cmd == "run":
         return run(args.config)
     if args.cmd == "convert":
         return convert(args.pdf, args.out, args.tool)
+    if args.cmd == "rank":
+        return rank(args.chunks, args.questions, args.out, args.k, args.tool)
     return 2
 
 

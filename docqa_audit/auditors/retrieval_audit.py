@@ -49,7 +49,7 @@ def _load_jsonl(path):
     return rows
 
 
-def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5)):
+def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5), ranking_rows=None):
     layer = model.LayerResult("检索层")
     chunks = _load_jsonl(chunks_path)
     questions = _load_jsonl(questions_path)
@@ -59,7 +59,10 @@ def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5)):
 
     by_id = {c["id"]: c for c in chunks}
     rankings = {}
-    if ranking_path:
+    if ranking_rows:
+        for row in ranking_rows:
+            rankings.setdefault(row.get("layer", "default"), {})[row["qid"]] = row["ids"]
+    elif ranking_path:
         for row in _load_jsonl(ranking_path):
             rankings.setdefault(row.get("layer", "default"), {})[row["qid"]] = row["ids"]
 

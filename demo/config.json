@@ -1,12 +1,22 @@
 {
   "project": "某市政再生水厂扩建工程 电气资料（示例数据）",
-  "parse": {"file": "parse/parsed.md"},
+  "parse": {
+    "file": "parse/parsed.md"
+  },
   "retrieval": {
     "chunks": "chunks/chunks.jsonl",
     "questions": "questions/questions.jsonl",
     "ranking": "retrieval/ranking.jsonl",
-    "ks": [1, 3, 5]
+    "ks": [
+      1,
+      3,
+      5
+    ],
+    "ranker": "bm25"
   },
-  "claims": {"answer": "generation/answer.md", "source": "source/source.txt"},
+  "claims": {
+    "answer": "generation/answer.md",
+    "source": "source/source.txt"
+  },
   "out": "report.md"
 }

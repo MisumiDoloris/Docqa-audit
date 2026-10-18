@@ -1,8 +1,8 @@
-{"qid": 1, "layer": "bm25", "ids": [1, 2, 3, 0, 4]}
-{"qid": 2, "layer": "bm25", "ids": [4, 1, 5, 0, 3]}
+{"qid": 1, "layer": "bm25", "ids": [1, 2, 3, 4, 0]}
+{"qid": 2, "layer": "bm25", "ids": [4, 0, 1, 2, 3]}
 {"qid": 3, "layer": "bm25", "ids": [3, 0, 1, 2, 4]}
-{"qid": 4, "layer": "bm25", "ids": [0, 1, 5, 2, 3]}
-{"qid": 5, "layer": "bm25", "ids": [5, 4, 0, 1, 2]}
+{"qid": 4, "layer": "bm25", "ids": [0, 4, 1, 2, 3]}
+{"qid": 5, "layer": "bm25", "ids": [5, 0, 1, 2, 3]}
 {"qid": 1, "layer": "rerank", "ids": [1, 0, 2, 3, 4]}
 {"qid": 2, "layer": "rerank", "ids": [4, 5, 1, 0, 3]}
 {"qid": 3, "layer": "rerank", "ids": [0, 1, 2, 3, 4]}

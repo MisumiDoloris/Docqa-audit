@@ -84,6 +84,29 @@ class RetrievalAuditTest(unittest.TestCase):
         self.assertEqual(layer.count(model.BLOCKER), 1)
 
 
+class Bm25AdapterTest(unittest.TestCase):
+    def test_tokenize_uses_char_bigrams(self):
+        from docqa_audit.adapters import rank_bm25_adapter as bm
+
+        toks = bm.tokenize("合格证编号 DEMO-0001")
+        self.assertIn("合格", toks)
+        self.assertIn("格证", toks)
+        self.assertIn("demo", "".join(toks))
+
+    def test_rank_puts_the_right_chunk_first(self):
+        from docqa_audit.adapters import rank_bm25_adapter as bm
+
+        chunks = [
+            {"id": 0, "text": "某工程电气设备进场检验记录 检验批编号 04-DEMO-001"},
+            {"id": 1, "text": "配电箱 规格 AL-01 数量 3台 合格证编号 DEMO-0001"},
+            {"id": 2, "text": "电缆进场 YJY22 数量 900 m 合格"},
+        ]
+        questions = [{"id": 1, "q": "配电箱的合格证编号是多少", "gt_ids": [1]}]
+        rows = bm.rank(chunks, questions, k=3)
+        self.assertEqual(rows[0]["qid"], 1)
+        self.assertEqual(rows[0]["ids"][0], 1)
+
+
 class ClaimAuditTest(unittest.TestCase):
     SRC = "序号3 现场控制站 FCS2-1001 数量 1台。电缆 900 m 进场合格。"
 

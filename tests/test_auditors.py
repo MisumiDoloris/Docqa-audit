@@ -53,6 +53,14 @@ class ParseAuditTest(unittest.TestCase):
         self.assertIn("序号断行", whats)
         self.assertIn("整列为空", whats)
 
+    def test_empty_header_is_record_not_warning(self):
+        """表头空列只记不警。分不清排版留白和解析丢失，不能当错拦。"""
+        md = "| 类别 | | 数量 |\n| --- | --- | --- |\n| 甲 | 乙 | 3台 |\n"
+        layer = parse_audit.audit(md)
+        self.assertEqual(layer.verdict, "通过")
+        self.assertEqual(layer.count(model.WARN), 0)
+        self.assertEqual(layer.count(model.INFO), 1)
+
 
 class RetrievalAuditTest(unittest.TestCase):
     def _write(self, rows):

@@ -42,9 +42,9 @@ MUTATIONS = [
     ),
     (
         "M3", "docqa_audit/auditors/parse_audit.py",
-        "if merged_header:",
-        "if False and merged_header:",
-        "关掉表头合并检测",
+        '                model.INFO,\n                "这列表头是空的',
+        '                model.WARN,\n                "这列表头是空的',
+        "表头空列从「记」改回「警」，空列只记不警的口径应当被锁住",
     ),
     (
         "M4", "docqa_audit/auditors/retrieval_audit.py",

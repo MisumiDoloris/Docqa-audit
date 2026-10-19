@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from docqa_audit import model  # noqa: E402
+from docqa_audit.adapters import rank_bm25_adapter  # noqa: E402
 from docqa_audit.auditors import claim_audit, parse_audit, retrieval_audit  # noqa: E402
 
 
@@ -107,23 +108,20 @@ class RetrievalAuditTest(unittest.TestCase):
 
 class Bm25AdapterTest(unittest.TestCase):
     def test_tokenize_uses_char_bigrams(self):
-        from docqa_audit.adapters import rank_bm25_adapter as bm
-
-        toks = bm.tokenize("合格证编号 DEMO-0001")
+        toks = rank_bm25_adapter.tokenize("合格证编号 DEMO-0001")
         self.assertIn("合格", toks)
         self.assertIn("格证", toks)
         self.assertIn("demo", "".join(toks))
 
+    @unittest.skipUnless(rank_bm25_adapter.available(), "没装 rank_bm25，跳过")
     def test_rank_puts_the_right_chunk_first(self):
-        from docqa_audit.adapters import rank_bm25_adapter as bm
-
         chunks = [
             {"id": 0, "text": "某工程电气设备进场检验记录 检验批编号 04-DEMO-001"},
             {"id": 1, "text": "配电箱 规格 AL-01 数量 3台 合格证编号 DEMO-0001"},
             {"id": 2, "text": "电缆进场 YJY22 数量 900 m 合格"},
         ]
         questions = [{"id": 1, "q": "配电箱的合格证编号是多少", "gt_ids": [1]}]
-        rows = bm.rank(chunks, questions, k=3)
+        rows = rank_bm25_adapter.rank(chunks, questions, k=3)
         self.assertEqual(rows[0]["qid"], 1)
         self.assertEqual(rows[0]["ids"][0], 1)
 

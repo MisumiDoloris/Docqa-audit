@@ -44,6 +44,9 @@ def run(config_path):
     if "claims" in cfg:
         c = cfg["claims"]
         layers.append(claim_audit.audit(_read(c["answer"]), _read(c["source"])))
+        if c.get("soft_judge"):
+            from .auditors import judge_audit
+            layers.append(judge_audit.judge(_read(c["answer"]), _read(c["source"])))
 
     if not layers:
         print("配置里没有可跑的层，检查 parse / retrieval / claims 三段", file=sys.stderr)

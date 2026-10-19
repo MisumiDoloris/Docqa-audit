@@ -22,7 +22,7 @@
 
 **检索层** 读切块和人工出的题，算 hit@k 和 MRR。标准答案块由人定，脚本只打分。给了多组排位数据就分层出指标，能直接看出是哪一层掉的分。
 
-**生成层** 把生成文本里的数字、编号、日期挑出来，逐个回原文找锚点，找不到就标出来。年限类直接拦，数字类降一档让人眼过。
+**生成层** 把生成文本里的数字、编号、日期挑出来，逐个回原文找锚点，找不到就标出来。年限类直接拦，数字类降一档让人眼过。软判据可选开，用 DeepEval 的忠实度让模型当裁判出参考分，不打分不拦，跟硬判据分开摆。
 
 ## 怎么跑
 
@@ -54,7 +54,7 @@ python3 -m unittest discover -s tests -v
     "ranking": "retrieval/ranking.jsonl",
     "ks": [1, 3, 5]
   },
-  "claims": {"answer": "generation/answer.md", "source": "source/source.txt"},
+  "claims": {"answer": "generation/answer.md", "source": "source/source.txt", "soft_judge": true},
   "out": "report.md"
 }
 ```
@@ -118,7 +118,7 @@ python3 -m unittest discover -s tests -v
 两条要提前知道的代价：
 
 - **成本与可复现性**：DeepEval 和 RAGAS 的核心指标都要叫模型当裁判，要 key、要钱，同一个答案跑两次分数可能不一样。所以它们是参考层，不是判决层。
-- **遥测**：DeepEval 默认上报使用数据（posthog）。要关掉得设 `DEEPEVAL_TELEMETRY_OPT_OUT`，这条要写进文档，别人 clone 下来不该被默默上报。
+- **遥测**：DeepEval 默认上报使用数据（posthog）。跑软判据前设 `DEEPEVAL_TELEMETRY_OPT_OUT=1` 关掉，别人 clone 下来不该被默默上报。
 
 ## 审查：怎么发现这套东西自己有 bug
 

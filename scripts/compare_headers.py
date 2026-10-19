@@ -70,12 +70,26 @@ def reblock_markitdown(lines):
     return groups
 
 
+def _is_field_name(s):
+    s = s.strip()
+    return bool(s) and len(s) <= 6 and not re.search(r"\d", s)
+
+
 def reblock_docling(tables):
-    """docling 归位：无表头、重复表头的表归前面，返回每张逻辑表的表头。"""
+    """docling 归位：无表头、重复表头的表归前面，返回每张逻辑表的表头。
+
+    docling 有时不把明显的字段名行标成 column_header（实测模块表的
+    「模块概述|描述|支持版本」就没标）。补一条：第一行有多个格子且都是
+    短名词（无数字），也当作表头。
+    """
     groups = []
     seen = []
     for t in tables:
         hs = tuple(c["text"] for c in t["cells"] if c["column_header"])
+        if not hs:
+            first = [c["text"] for c in t["cells"] if c["row"][0] == 0]
+            if len(first) >= 2 and all(_is_field_name(x) for x in first):
+                hs = tuple(first)
         if not hs and groups:
             continue
         if hs and hs in seen:

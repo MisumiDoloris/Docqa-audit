@@ -6,6 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "docqa-audit"
 version = "0.1.0"
 description = "给文档问答流水线做三层验收：解析、检索、生成"
+authors = [{ name = "MisumiDoloris" }]
+license = { text = "MIT" }
 requires-python = ">=3.9"
 dependencies = []
 

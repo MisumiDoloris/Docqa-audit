@@ -18,12 +18,13 @@ def render(layers, title="验收报告", meta=None):
 
     blockers = sum(l.count(model.BLOCKER) for l in layers)
     warns = sum(l.count(model.WARN) for l in layers)
+    infos = sum(l.count(model.INFO) for l in layers)
     overall = "不能交付" if blockers else ("能交付，但有要人看的地方" if warns else "通过")
     out += [
-        f"**结论：{overall}**（拦 {blockers} 条，警 {warns} 条）",
+        f"**结论：{overall}**（拦 {blockers} 条，警 {warns} 条，记 {infos} 条）",
         "",
-        "| 层 | 结论 | 拦 | 警 | 摘要 |",
-        "| --- | --- | --- | --- | --- |",
+        "| 层 | 结论 | 拦 | 警 | 记 | 摘要 |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     def _fmt(v):
         if isinstance(v, dict):
@@ -33,7 +34,7 @@ def render(layers, title="验收报告", meta=None):
     for l in layers:
         summary = "；".join(f"{k} {_fmt(v)}" for k, v in l.summary.items()) or "—"
         out.append(
-            f"| {l.name} | {l.verdict} | {l.count(model.BLOCKER)} | {l.count(model.WARN)} | {summary} |"
+            f"| {l.name} | {l.verdict} | {l.count(model.BLOCKER)} | {l.count(model.WARN)} | {l.count(model.INFO)} | {summary} |"
         )
     out.append("")
 

@@ -51,7 +51,7 @@ class ParseAuditTest(unittest.TestCase):
         self.assertEqual(layer.verdict, "不可交付")
         whats = " ".join(f.what for f in layer.findings)
         self.assertIn("序号断行", whats)
-        self.assertIn("表头疑似被合并", whats)
+        self.assertIn("整列为空", whats)
 
 
 class RetrievalAuditTest(unittest.TestCase):

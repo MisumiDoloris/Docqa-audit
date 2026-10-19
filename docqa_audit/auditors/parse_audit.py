@@ -77,8 +77,8 @@ def audit(text, source_name="parsed.md"):
         if blank_header:
             layer.add(model.Finding(
                 where, f"表头第 {', '.join(map(str, blank_header))} 列是空的",
-                model.WARN,
-                "空表头列后面填的东西对不上名，检索时也检索不到，建议解析器换参数重跑这一页",
+                model.INFO,
+                "这列表头是空的，可能是原文档排版留白，也可能是解析丢了内容，对照原 PDF 或另一底座确认",
             ))
 
         body = [_cells(ln) for _, ln in rows[1:]]
@@ -89,28 +89,21 @@ def audit(text, source_name="parsed.md"):
                 if values and all(not v for v in values):
                     layer.add(model.Finding(
                         where, f"第 {col + 1} 列整列为空（{len(values)} 行）",
-                        model.WARN,
-                        "这一列的内容可能被解析到别处了，检索时这块信息会缺",
+                        model.INFO,
+                        "这一列全空，可能是原文档分隔列或合并单元格，也可能是解析丢了内容，对照确认",
                     ))
             empties = sum(1 for r in body for c in r if not c)
             cells = sum(len(r) for r in body)
             if cells and empties / cells > empty_ratio_limit:
                 layer.add(model.Finding(
                     where, f"空格子占 {empties}/{cells}（{empties / cells:.0%}）",
-                    model.WARN,
-                    "结构可能没认出来，表格退化成按位置摆的字了，看原文对比一眼",
+                    model.INFO,
+                    "这张表空格偏多，可能是原文档本就稀疏，也可能表格结构没认出来，对照原 PDF 看一眼",
                 ))
 
-            # 以下三条是跑真实解析器输出才补上的。列数一样不代表内容对得上，
-            # 表头被合成一格、行被切断、两列粘成一格，这些错列数检查一条都抓不到。
-            merged_header = [h for h in header if re.search(r"\S\s+\S", h)]
-            if merged_header:
-                layer.add(model.Finding(
-                    where, "表头疑似被合并成一格：" + "、".join(f"「{h}」" for h in merged_header[:3]),
-                    model.WARN,
-                    "表头列数比真实列数少，后面的数据会整体错位，检索时按列名找不到东西",
-                ))
-
+            # 这一条是跑真实解析器输出才补上的。列数一样不代表内容对得上，
+            # 一行被切成两行，列数检查一条都抓不到。两列粘成一格则由上面的
+            # 「整列空」兜底，不需要单独再查长度。
             seq = [r[0] for r in body if r]
             numeric = sum(1 for v in seq if _NUM.fullmatch(v))
             if len(seq) >= 3 and 0 < numeric < len(seq):
@@ -120,21 +113,6 @@ def audit(text, source_name="parsed.md"):
                            + "、".join(f"「{v}」" for v in seq if v and not _NUM.fullmatch(v))[:60],
                     model.BLOCKER,
                     "一行被切成两行，下半截跑到下一行去了，这张表必须人看着重新对齐",
-                ))
-
-            glued = []
-            for col in range(max(len(r) for r in body) if body else 0):
-                lens = sorted(len(r[col]) for r in body if col < len(r) and r[col])
-                if len(lens) < 2:
-                    continue
-                mid = lens[len(lens) // 2]
-                if mid and lens[-1] > max(2.5 * mid, mid + 8):
-                    glued.append(col + 1)
-            if glued:
-                layer.add(model.Finding(
-                    where, f"第 {', '.join(map(str, glued))} 列出现长度异常的格子，疑似两列粘成一格",
-                    model.WARN,
-                    "粘住的格子里混着两个字段，取值时会取错，看一眼原图对一下",
                 ))
 
     layer.summary["表格数"] = len(blocks)

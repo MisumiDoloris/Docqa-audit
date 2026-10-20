@@ -92,14 +92,26 @@ def _is_field_name(s):
 
 
 def reblock_docling(tables):
-    """docling 归位：无表头、重复表头的表归前面，返回每张逻辑表的表头。"""
+    """docling 归位：无表头、重复表头的表归前面，返回每张逻辑表的表头。
+
+    有 column_header 时，表头取「第一行的全部格」而不是只取标了
+    column_header 的格——docling 会把左上角的 corner 格（column_header 和
+    row_header 都是 false）和行标签列漏标，只取 column_header 就会丢掉它们，
+    反过来把 markitdown 的正常表头误报成「多出」。
+    """
     groups, seen = [], []
     for t in tables:
-        hs = tuple(c["text"] for c in t["cells"] if c["column_header"])
-        if not hs:
+        colh = [c for c in t["cells"] if c["column_header"]]
+        if colh:
+            first = sorted((c for c in t["cells"] if c["row"][0] == 0),
+                           key=lambda c: c["col"][0])
+            hs = tuple(c["text"] for c in first if c["text"].strip())
+        else:
             first = [c["text"] for c in t["cells"] if c["row"][0] == 0]
             if len(first) >= 2 and all(_is_field_name(x) for x in first):
                 hs = tuple(first)
+            else:
+                hs = ()
         if not hs and groups:
             continue
         if hs and hs in seen:

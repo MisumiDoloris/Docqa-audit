@@ -114,6 +114,30 @@ class CrossAuditTest(unittest.TestCase):
         self.assertEqual(len(blockers), 1, blockers)
         self.assertIn("S16700-4", blockers[0])
 
+    def test_corner_cell_counts_as_header(self):
+        """docling 把左上角格标成既非列头也非行头（corner），不能丢。
+
+        真数据里 docling 的「交换机功能」这格 column_header=false、row_header=false，
+        但它是表头第一列。漏了它，会把 markitdown 的正常表头误报成「多出」。
+        两边表头明明一样，不许报一条记。
+        """
+        docling = [{
+            "idx": 0, "num_rows": 2, "num_cols": 4,
+            "cells": [
+                _cell("交换机功能", 0, 0, column_header=False, row_header=False),
+                _cell("N1基本软件", 0, 1),
+                _cell("N1基础包", 0, 2),
+                _cell("N1高级包", 0, 3),
+            ],
+        }]
+        md = (
+            "| 交换机功能 | N1基本软件 | N1基础包 | N1高级包 |\n| --- | --- | --- | --- |\n"
+            "| 甲 | 乙 | 丙 | 丁 |\n"
+        )
+        layer = cross_audit.audit(docling, md)
+        self.assertEqual(layer.verdict, "通过")
+        self.assertEqual(layer.count(model.INFO), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

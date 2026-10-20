@@ -52,7 +52,8 @@ def run(config_path):
         import json as _json
         from .auditors import cross_audit
         c = cfg["cross"]
-        docling_tables = _json.load(open(c["docling_json"], encoding="utf-8"))["tables"]
+        with open(c["docling_json"], encoding="utf-8") as f:
+            docling_tables = _json.load(f)["tables"]
         layers.append(cross_audit.audit(docling_tables, _read(c["markitdown_md"])))
 
     if not layers:

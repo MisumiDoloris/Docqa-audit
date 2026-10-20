@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -53,12 +54,33 @@ class RunWithCrossTest(unittest.TestCase):
         d, cfg_path = self._write_project()
         with contextlib.redirect_stdout(io.StringIO()):
             rc = cli.run(cfg_path)
-        report = open(os.path.join(d, "report.md"), encoding="utf-8").read()
+        with open(os.path.join(d, "report.md"), encoding="utf-8") as f:
+            report = f.read()
 
         self.assertEqual(rc, 1, "有 blocker 时退出码应是 1")
         self.assertIn("对比层", report)
         self.assertIn("S16700-4", report)
         self.assertIn("不可交付", report)
+
+
+class DemoFourLayersTest(unittest.TestCase):
+    def test_demo_config_runs_all_four_layers(self):
+        """仓库自带的 demo 一条命令就该出四层报告，别人 clone 下来能复现。"""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        demo = os.path.join(root, "demo")
+        # 复制到临时目录跑，别把 git 跟踪的 demo/report.md 弄脏。
+        tmp = tempfile.mkdtemp()
+        shutil.copytree(demo, os.path.join(tmp, "demo"))
+        cfg_path = os.path.join(tmp, "demo", "config.json")
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = cli.run(cfg_path)
+        with open(os.path.join(tmp, "demo", "report.md"), encoding="utf-8") as f:
+            report = f.read()
+
+        for name in ("解析层", "对比层", "检索层", "生成层"):
+            self.assertIn(name, report, f"报告里缺 {name}")
+        self.assertEqual(rc, 1, "demo 里埋了错，退出码应是 1")
 
 
 if __name__ == "__main__":

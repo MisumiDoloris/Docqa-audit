@@ -62,6 +62,21 @@ class ParseAuditTest(unittest.TestCase):
         self.assertEqual(layer.count(model.WARN), 0)
         self.assertEqual(layer.count(model.INFO), 1)
 
+    def test_near_empty_output_is_blocker(self):
+        """扫描件几乎没解出内容（实测一张营业执照只吐 14 字）必须拦。
+
+        输出非空不等于解析成功，这类静默失败只看字数才抓得到。
+        """
+        layer = parse_audit.audit("<!-- image -->")
+        self.assertEqual(layer.count(model.BLOCKER), 1)
+        self.assertIn("字", layer.findings[0].what)
+
+    def test_long_text_without_table_stays_warn(self):
+        """没表格但内容不少，还是只警，不能因为没表就判它没解出来。"""
+        layer = parse_audit.audit("这是一份没有表格但内容完整的纯文本。" * 20)
+        self.assertEqual(layer.count(model.BLOCKER), 0)
+        self.assertEqual(layer.count(model.WARN), 1)
+
 
 class RetrievalAuditTest(unittest.TestCase):
     def _write(self, rows):

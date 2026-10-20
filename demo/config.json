@@ -3,6 +3,10 @@
   "parse": {
     "file": "parse/parsed.md"
   },
+  "cross": {
+    "docling_json": "cross/docling.json",
+    "markitdown_md": "cross/markitdown.md"
+  },
   "retrieval": {
     "chunks": "chunks/chunks.jsonl",
     "questions": "questions/questions.jsonl",

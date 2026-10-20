@@ -17,6 +17,7 @@ from .. import model
 _TABLE_LINE = re.compile(r"^\s*\|")
 _SEP_LINE = re.compile(r"^\s*\|[\s:\-|]+\|\s*$")
 _NUM = re.compile(r"\d+")
+_MIN_CHARS = 50  # 没表格时整份输出低于这个字数，判「没解出来」，不是「没表」
 
 
 def _cells(line):
@@ -44,11 +45,19 @@ def audit(text, source_name="parsed.md"):
 
     if not blocks:
         layer.summary["表格数"] = 0
-        layer.add(model.Finding(
-            source_name, "没有识别到任何 Markdown 表格",
-            model.WARN,
-            "如果原文里本来有表，说明解析器把表格退化成纯文本了，这一层要人眼看一遍",
-        ))
+        if len(text.strip()) < _MIN_CHARS:
+            layer.add(model.Finding(
+                source_name,
+                f"整份输出只有 {len(text.strip())} 字，低于 {_MIN_CHARS} 字下限",
+                model.BLOCKER,
+                "扫描件很可能一个字都没解出来。输出非空不等于解析成功，必须重跑或换底座",
+            ))
+        else:
+            layer.add(model.Finding(
+                source_name, "没有识别到任何 Markdown 表格",
+                model.WARN,
+                "如果原文里本来有表，说明解析器把表格退化成纯文本了，这一层要人眼看一遍",
+            ))
         return layer
 
     empty_ratio_limit = 0.4

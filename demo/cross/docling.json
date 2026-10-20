@@ -1,0 +1,16 @@
+{
+  "n_tables": 1,
+  "tables": [
+    {
+      "idx": 0,
+      "num_rows": 3,
+      "num_cols": 4,
+      "cells": [
+        {"text": "类别", "row": [0, 1], "col": [0, 1], "row_span": 1, "col_span": 1, "column_header": false, "row_header": true},
+        {"text": "业务特性", "row": [0, 1], "col": [1, 2], "row_span": 1, "col_span": 1, "column_header": true, "row_header": false},
+        {"text": "示例型号 S16700-4", "row": [0, 1], "col": [2, 3], "row_span": 1, "col_span": 1, "column_header": true, "row_header": false},
+        {"text": "示例型号 S16700-8", "row": [0, 1], "col": [3, 4], "row_span": 1, "col_span": 1, "column_header": true, "row_header": false}
+      ]
+    }
+  ]
+}

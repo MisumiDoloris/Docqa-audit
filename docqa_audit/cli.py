@@ -1,6 +1,6 @@
 """命令行入口。
 
-一条命令跑完三层，出一份 Markdown 报告：
+一条命令跑完全部配置的层，出一份 Markdown 报告：
 
     python3 -m docqa_audit run --config demo/config.json
 
@@ -48,8 +48,15 @@ def run(config_path):
             from .auditors import judge_audit
             layers.append(judge_audit.judge(_read(c["answer"]), _read(c["source"])))
 
+    if "cross" in cfg:
+        import json as _json
+        from .auditors import cross_audit
+        c = cfg["cross"]
+        docling_tables = _json.load(open(c["docling_json"], encoding="utf-8"))["tables"]
+        layers.append(cross_audit.audit(docling_tables, _read(c["markitdown_md"])))
+
     if not layers:
-        print("配置里没有可跑的层，检查 parse / retrieval / claims 三段", file=sys.stderr)
+        print("配置里没有可跑的层，检查 parse / retrieval / claims / cross 四段", file=sys.stderr)
         return 2
 
     text = report_mod.render(layers, title="验收报告", meta={

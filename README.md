@@ -194,6 +194,7 @@ docqa_audit/
   model.py            Finding / LayerResult / verdict
   auditors/
     parse_audit.py    解析层
+    cross_audit.py    对比层（底座互检）
     retrieval_audit.py 检索层
     claim_audit.py    生成层
   report.py           拼报告

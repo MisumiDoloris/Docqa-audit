@@ -190,6 +190,25 @@ class CrossAuditTest(unittest.TestCase):
         warns = [f.what for f in layer.findings if f.severity == model.WARN]
         self.assertFalse(any("S5735-L24T4X" in w for w in warns), warns)
 
+    def test_model_number_outside_tables_is_not_warned(self):
+        """型号只出现在正文段落里也算没丢。
+
+        真数据上踩过：LSH7MPUAX1C0 在 markitdown 输出里出现三次，全在表格外的
+        段落里。只搜表格块会报假警，所以这一项比的是整份输出。
+        """
+        docling = [{
+            "idx": 0, "num_rows": 2, "num_cols": 2,
+            "cells": [_cell("编码", 0, 0), _cell("说明", 0, 1),
+                      _cell("LSH7MPUAX1C0", 1, 0), _cell("主控板", 1, 1)],
+        }]
+        md = (
+            "| 编码 | 说明 |\n| --- | --- |\n| 见正文 | 主控板 |\n\n"
+            "上表这块主控板对应 LSH7MPUAX1C0，另见附录。\n"
+        )
+        layer = cross_audit.audit(docling, md)
+        warns = [f.what for f in layer.findings if f.severity == model.WARN]
+        self.assertFalse(any("LSH7MPUAX1C0" in w for w in warns), warns)
+
     def test_data_row_gap_is_record_only(self):
         """数据行数不同只记，不拦也不警。碎片合并策略不同本来就会差行。"""
         docling = [{

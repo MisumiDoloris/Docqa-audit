@@ -57,7 +57,7 @@ def main():
     md_headers = [g["header"] for g in md_shapes]
     dl_headers = [g["header"] for g in dl_shapes]
     assigned = cross_audit.pair_tables(dl_headers, md_headers)
-    md_all = " ".join(g["text"] for g in md_shapes)
+    md_all = md_text  # 型号去整份输出里找，正文里出现过也算没丢
 
     blocks = []
     for i, d in enumerate(dl_headers, 1):

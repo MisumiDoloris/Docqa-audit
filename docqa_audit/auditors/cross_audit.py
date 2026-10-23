@@ -252,7 +252,9 @@ def audit(docling_tables, markitdown_text, source_name="对比层"):
 
     # 配对必须一对一，理由见 pair_tables。
     assigned = pair_tables(dl_headers, md_headers)
-    md_all = " ".join(g["text"] for g in md_shapes)
+    # 数据串的去处搜整份 markitdown 输出，不只是表里那几行：型号出现在正文段落里
+    # 也算没丢。实测真数据里 LSH7MPUAX1C0 出现在表格外，只搜表格会报假警。
+    md_all = str(markitdown_text)
 
     paired = 0
     cols_gap = 0

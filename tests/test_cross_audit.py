@@ -138,6 +138,71 @@ class CrossAuditTest(unittest.TestCase):
         self.assertEqual(layer.verdict, "通过")
         self.assertEqual(layer.count(model.INFO), 0)
 
+    def test_column_gap_with_same_headers_is_blocker(self):
+        """表头名字一样但列数差着（合并单元格、整列被吞），按口径直接拦。
+
+        docling 的 num_cols 是网格列数，表头因为合并单元格只出 2 个名字；
+        markitdown 那边 2 列。表头比不出差，列数一比就出来了。
+        """
+        docling = [{
+            "idx": 0, "num_rows": 2, "num_cols": 5,
+            "cells": [_cell("项目", 0, 0), _cell("规格", 0, 1, column_header=True),
+                      _cell("3 台", 1, 0)],
+        }]
+        md = "| 项目 | 规格 |\n| --- | --- |\n| 3 台 | 见上 |\n"
+        layer = cross_audit.audit(docling, md)
+        self.assertEqual(layer.count(model.BLOCKER), 1)
+        self.assertIn("5 列", layer.findings[0].what)
+        self.assertIn("2 列", layer.findings[0].what)
+
+    def test_lost_model_number_in_data_is_warn(self):
+        """数据行里的型号在整份 markitdown 输出里找不到，要报警。
+
+        表头一样、列数一样，只有数据丢了。这种情况前面几项判据全绿，
+        只有拿数据里的字母数字串去全文找才抓得到。
+        """
+        docling = [{
+            "idx": 0, "num_rows": 2, "num_cols": 2,
+            "cells": [_cell("型号", 0, 0), _cell("数量", 0, 1),
+                      _cell("S5735-L24T4X", 1, 0), _cell("3 台", 1, 1)],
+        }]
+        md = "| 型号 | 数量 |\n| --- | --- |\n| S5735-L24T4S | 3 台 |\n"
+        layer = cross_audit.audit(docling, md)
+        self.assertEqual(layer.count(model.BLOCKER), 0)
+        warns = [f.what for f in layer.findings if f.severity == model.WARN]
+        self.assertTrue(any("S5735-L24T4X" in w for w in warns), warns)
+
+    def test_model_number_found_elsewhere_is_not_warned(self):
+        """型号出现在文档别的表里就不算丢，别报假警。
+
+        碎片归位差一点就会把同一条数据算到别的表上，所以比的是整份输出。
+        """
+        docling = [{
+            "idx": 0, "num_rows": 2, "num_cols": 2,
+            "cells": [_cell("型号", 0, 0), _cell("数量", 0, 1),
+                      _cell("S5735-L24T4X", 1, 0), _cell("3 台", 1, 1)],
+        }]
+        md = (
+            "| 型号 | 数量 |\n| --- | --- |\n| 见下表 | 3 台 |\n\n"
+            "| 硬件型号 | 说明 |\n| --- | --- |\n| S5735-L24T4X | 见规格 |\n"
+        )
+        layer = cross_audit.audit(docling, md)
+        warns = [f.what for f in layer.findings if f.severity == model.WARN]
+        self.assertFalse(any("S5735-L24T4X" in w for w in warns), warns)
+
+    def test_data_row_gap_is_record_only(self):
+        """数据行数不同只记，不拦也不警。碎片合并策略不同本来就会差行。"""
+        docling = [{
+            "idx": 0, "num_rows": 6, "num_cols": 2,
+            "cells": [_cell("项目", 0, 0), _cell("规格", 0, 1),
+                      _cell("甲", 1, 0), _cell("乙", 2, 0)],
+        }]
+        md = "| 项目 | 规格 |\n| --- | --- |\n| 甲 | 见上 |\n"
+        layer = cross_audit.audit(docling, md)
+        self.assertEqual(layer.count(model.BLOCKER), 0)
+        self.assertEqual(layer.count(model.WARN), 0)
+        self.assertGreaterEqual(layer.count(model.INFO), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

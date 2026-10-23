@@ -1,4 +1,4 @@
-"""对比层：拿两个解析底座解同一份 PDF，比表头，抓单看一边看不出的错。
+"""对比层：拿两个解析底座解同一份 PDF，比表头、比列数、比数据，抓单看一边看不出的错。
 
 为什么要这一层：有些错在单个底座的输出里长得跟「正常排版」一样。
 markitdown 把第二层表头（型号名 S16700-4/8）当成数据行，它自己的
@@ -15,6 +15,10 @@ Markdown 看不出异常；docling 把型号名认成表头。两边一对比，
 - docling 有、markitdown 没有的表头字段 → 拦（那几列在 markitdown 的输出里不存在）
 - markitdown 有、docling 没有的 → 只记（可能是 docling 归位漏了，也可能是口径差）
 - 两边逻辑表张数不同 → 只记（碎片合并策略不同，不是错）
+- 表头对得上但列数不同 → docling 多就拦（合并单元格或整列被吞），markitdown 多只记
+- 表头对不上时不再报列数，同一个根因不报两遍
+- docling 的数据里有型号、编号这类字母数字串，在整份 markitdown 输出里一个都找不到 → 警
+  （这一层只查「在不在」，不判断数值对不对，改数字它抓不到）
 """
 
 import re
@@ -24,6 +28,9 @@ from .. import model
 _PAIR_FLOOR = 0.3      # 表头重合低于这个值，认作「没配上」，不硬比
 _SEP_LINE = re.compile(r"^\s*\|[\s:\-|]+\|\s*$")
 _TABLE_LINE = re.compile(r"^\s*\|")
+# 数据里的型号、编号：字母打头带数字，长度四个字符以上。纯数字太吵，不比。
+# 字母部分允许只有一个字母——华为那批型号就是 S5735、S16700、AP4050 这种。
+_DATA_TOKEN = re.compile(r"[A-Za-z]{1,}[-_]?\d[\w\-./]*")
 
 
 def _cells(line):
@@ -44,8 +51,27 @@ def _table_blocks(lines):
     return blocks
 
 
-def reblock_markitdown(lines):
-    """markitdown 碎片归位成逻辑表，返回每张逻辑表的表头（非空 cell）。"""
+def _md_block_shape(block):
+    """一个 Markdown 表格块（可能只是碎片）的表头、列数、数据行数、数据文本。"""
+    body = [(no, ln) for no, ln in block if not _SEP_LINE.match(ln)]
+    if not body:
+        return {"header": [], "cols": 0, "rows": 0, "text": ""}
+    header = _cells(body[0][1])
+    cols = max(len(_cells(ln)) for _no, ln in body)
+    text = " ".join(" ".join(_cells(ln)) for _no, ln in body[1:])
+    return {"header": header, "cols": cols, "rows": max(len(body) - 1, 0), "text": text}
+
+
+def _is_data(hc):
+    ne = [c for c in hc if c]
+    if not ne:
+        return False
+    f = ne[0]
+    return "支持" in f or "：" in f or ":" in f or re.match(r"^[A-Z]+[0-9]", f)
+
+
+def reblock_markitdown_shapes(lines):
+    """markitdown 碎片归位成逻辑表，每张表带上表头、列数、数据行数、数据文本。"""
     is_table = [ln.strip().startswith("|") for ln in lines]
 
     # 规则一：续行切断。夹在两个表格行中间的普通文本，拼回上一行。
@@ -60,30 +86,27 @@ def reblock_markitdown(lines):
             merged.append(lines[i])
         i += 1
 
-    def header(block):
-        rows = [(no, ln) for no, ln in block if not _SEP_LINE.match(ln)]
-        if not rows:
-            return []
-        return _cells(rows[0][1])
-
-    def is_data(hc):
-        ne = [c for c in hc if c]
-        if not ne:
-            return False
-        f = ne[0]
-        return "支持" in f or "：" in f or ":" in f or re.match(r"^[A-Z]+[0-9]", f)
-
     groups, seen = [], []
     for block in _table_blocks(merged):
-        hc = header(block)
-        ne = [c for c in hc if c]
+        shape = _md_block_shape(block)
+        ne = [c for c in shape["header"] if c]
         dup = any(ne == p for p in seen if p)
         # 规则二 / 三：空表头、数据行当表头、重复表头 → 续表，归前面。
-        if groups and (len(ne) <= 2 or is_data(hc) or dup):
+        if groups and (len(ne) <= 2 or _is_data(shape["header"]) or dup):
+            g = groups[-1]
+            g["cols"] = max(g["cols"], shape["cols"])
+            # 碎片当续表时整块都是数据行，表头已经在组里了，所以不减一。
+            g["rows"] += shape["rows"] + 1
+            g["text"] = (g["text"] + " " + shape["text"]).strip()
             continue
-        groups.append(ne)
+        groups.append(shape)
         seen.append(ne)
     return groups
+
+
+def reblock_markitdown(lines):
+    """兼容旧调用：只要表头。"""
+    return [g["header"] for g in reblock_markitdown_shapes(lines)]
 
 
 def _is_field_name(s):
@@ -91,8 +114,28 @@ def _is_field_name(s):
     return bool(s) and len(s) <= 6 and not re.search(r"\d", s)
 
 
-def reblock_docling(tables):
-    """docling 归位：无表头、重复表头的表归前面，返回每张逻辑表的表头。
+def _dl_table_shape(t):
+    """docling 一张物理表的表头、列数、数据行数、数据文本。"""
+    colh = [c for c in t["cells"] if c.get("column_header")]
+    if colh:
+        first = sorted((c for c in t["cells"] if c["row"][0] == 0),
+                       key=lambda c: c["col"][0])
+        hs = [c["text"] for c in first if c["text"].strip()]
+    else:
+        first = [c["text"] for c in t["cells"] if c["row"][0] == 0]
+        if len(first) >= 2 and all(_is_field_name(x) for x in first):
+            hs = first
+        else:
+            hs = []
+    cols = t.get("num_cols") or max((c["col"][1] for c in t["cells"]), default=0)
+    rows = t.get("num_rows") or max((c["row"][1] for c in t["cells"]), default=0)
+    text = " ".join(str(c["text"]) for c in t["cells"]
+                    if c["row"][0] >= 1 and str(c["text"]).strip())
+    return {"header": hs, "cols": int(cols or 0), "rows": int(rows or 0), "text": text}
+
+
+def reblock_docling_shapes(tables):
+    """docling 归位：无表头、重复表头的表归前面，每张表带上形状。
 
     有 column_header 时，表头取「第一行的全部格」而不是只取标了
     column_header 的格——docling 会把左上角的 corner 格（column_header 和
@@ -101,25 +144,23 @@ def reblock_docling(tables):
     """
     groups, seen = [], []
     for t in tables:
-        colh = [c for c in t["cells"] if c["column_header"]]
-        if colh:
-            first = sorted((c for c in t["cells"] if c["row"][0] == 0),
-                           key=lambda c: c["col"][0])
-            hs = tuple(c["text"] for c in first if c["text"].strip())
-        else:
-            first = [c["text"] for c in t["cells"] if c["row"][0] == 0]
-            if len(first) >= 2 and all(_is_field_name(x) for x in first):
-                hs = tuple(first)
-            else:
-                hs = ()
-        if not hs and groups:
+        shape = _dl_table_shape(t)
+        hs = tuple(shape["header"])
+        if (not hs or hs in seen) and groups:
+            g = groups[-1]
+            g["cols"] = max(g["cols"], shape["cols"])
+            g["rows"] += shape["rows"]
+            g["text"] = (g["text"] + " " + shape["text"]).strip()
             continue
-        if hs and hs in seen:
-            continue
-        groups.append(list(hs))
+        groups.append(shape)
         if hs:
             seen.append(hs)
     return groups
+
+
+def reblock_docling(tables):
+    """兼容旧调用：只要表头。"""
+    return [g["header"] for g in reblock_docling_shapes(tables)]
 
 
 def _norm(s):
@@ -159,15 +200,37 @@ def pair_tables(dl_headers, md_headers, floor=_PAIR_FLOOR):
     return assigned
 
 
+def missing_data_tokens(docling_text, markitdown_text):
+    """docling 数据里的型号/编号，在整份 markitdown 输出里找不到的。
+
+    比整份输出而不是比配对上的那一张表：碎片归位差一点就误报，整份里
+    找得到就说明数据没丢，只是位置不同。
+    """
+    md_norm = _norm(markitdown_text)
+    out, seen = [], set()
+    for tok in _DATA_TOKEN.findall(str(docling_text)):
+        if len(tok) < 4:
+            continue
+        key = tok.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if _norm(tok) not in md_norm:
+            out.append(tok)
+    return out
+
+
 def audit(docling_tables, markitdown_text, source_name="对比层"):
-    """两个底座的输出放一起比表头。
+    """两个底座的输出放一起比表头、列数、数据。
 
     docling_tables: scripts/export_docling_json.py 导出的 tables 列表
     markitdown_text: markitdown 解同一份 PDF 的 Markdown 全文
     """
     layer = model.LayerResult("对比层")
-    md_headers = reblock_markitdown(str(markitdown_text).splitlines())
-    dl_headers = reblock_docling(docling_tables or [])
+    md_shapes = reblock_markitdown_shapes(str(markitdown_text).splitlines())
+    dl_shapes = reblock_docling_shapes(docling_tables or [])
+    md_headers = [g["header"] for g in md_shapes]
+    dl_headers = [g["header"] for g in dl_shapes]
     layer.summary["docling 逻辑表"] = len(dl_headers)
     layer.summary["markitdown 逻辑表"] = len(md_headers)
 
@@ -189,8 +252,10 @@ def audit(docling_tables, markitdown_text, source_name="对比层"):
 
     # 配对必须一对一，理由见 pair_tables。
     assigned = pair_tables(dl_headers, md_headers)
+    md_all = " ".join(g["text"] for g in md_shapes)
 
     paired = 0
+    cols_gap = 0
     for idx, d in enumerate(dl_headers, 1):
         if not d:
             continue
@@ -204,6 +269,8 @@ def audit(docling_tables, markitdown_text, source_name="对比层"):
             continue
         best, score = assigned[idx - 1]
         m = md_headers[best]
+        dshape = dl_shapes[idx - 1]
+        mshape = md_shapes[best]
         paired += 1
 
         d_keys = {_norm(x): x for x in d if x}
@@ -228,5 +295,48 @@ def audit(docling_tables, markitdown_text, source_name="对比层"):
                 "可能是 docling 归位时把表头漏掉了，也可能是两个底座对表头行的判断口径不同，人工看一眼",
             ))
 
+        # 列数：表头已经丢了的表不再报，同一个根因不报两遍。
+        if not lost and dshape["cols"] and mshape["cols"]:
+            if dshape["cols"] > mshape["cols"]:
+                cols_gap += 1
+                layer.add(model.Finding(
+                    source_name,
+                    f"逻辑表{idx}：docling 是 {dshape['cols']} 列，markitdown 只有 {mshape['cols']} 列",
+                    model.BLOCKER,
+                    "表头名字对得上但列数对不上，通常是合并单元格或整列被吞。"
+                    "按定死口径，列数不一致直接拦",
+                ))
+            elif mshape["cols"] > dshape["cols"]:
+                layer.add(model.Finding(
+                    source_name,
+                    f"逻辑表{idx}：markitdown 是 {mshape['cols']} 列，docling 只有 {dshape['cols']} 列",
+                    model.INFO,
+                    "markitdown 多出来的列可能是把行标签拆开算了，人工看一眼这张表",
+                ))
+
+        # 数据行数：只记。两个底座合并碎片的策略不同，行数本来就容易差。
+        # docling 的 rows 含表头行，所以要减一才跟 markitdown 比。
+        d_rows = max(dshape["rows"] - 1, 0)
+        if d_rows > mshape["rows"]:
+            layer.add(model.Finding(
+                source_name,
+                f"逻辑表{idx}：docling 数据 {d_rows} 行，markitdown 只有 {mshape['rows']} 行",
+                model.INFO,
+                "差几行可能只是碎片合并方式不同。看下面有没有具体型号丢了，那才是真丢",
+            ))
+
+        # 数据内容：型号、编号这类字母数字串，在整份 markitdown 输出里一个都找不到。
+        missing = missing_data_tokens(dshape["text"], md_all)
+        if missing:
+            layer.add(model.Finding(
+                source_name,
+                f"逻辑表{idx}：数据里有 {len(missing)} 个型号或编号在 markitdown 输出里找不到："
+                + "、".join(f"「{x}」" for x in missing[:5]),
+                model.WARN,
+                "这些串在 docling 的数据行里出现过，整份 markitdown 输出里都没有。"
+                "可能是整行被丢，也可能是写法差（空格、单位符号）。人工核对一下",
+            ))
+
     layer.summary["配上"] = paired
+    layer.summary["列数不一致"] = cols_gap
     return layer

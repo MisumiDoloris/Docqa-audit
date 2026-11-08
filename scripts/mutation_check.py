@@ -70,6 +70,24 @@ MUTATIONS = [
         "            \"年限表述\", \"原文里找不到：\" + \"、\".join(missing[\"年限\"][:5]),\n            model.WARN,",
         "年限虚报从「拦」降成「警」",
     ),
+    (
+        "M8", "docqa_audit/auditors/cross_audit.py",
+        '                    f"逻辑表{idx}：docling 是 {dshape[\'cols\']} 列，markitdown 只有 {mshape[\'cols\']} 列",\n                    model.BLOCKER,',
+        '                    f"逻辑表{idx}：docling 是 {dshape[\'cols\']} 列，markitdown 只有 {mshape[\'cols\']} 列",\n                    model.INFO,',
+        "对比层列数不一致从「拦」降成「记」，定死口径应当被锁住",
+    ),
+    (
+        "M9", "docqa_audit/auditors/cross_audit.py",
+        '        missing = missing_data_tokens(dshape["text"], md_all)',
+        '        missing = missing_data_tokens(dshape["text"], mshape["text"])',
+        "型号搜索域从整份输出收回单张表，正是真数据假警的根因",
+    ),
+    (
+        "M10", "docqa_audit/auditors/cross_audit.py",
+        "    for score, i, j in scored:\n        if i in assigned or j in used_md:\n            continue",
+        "    for score, i, j in scored:\n        if i in assigned:\n            continue",
+        "一对一配对退化成最近邻，会造出根本不存在的丢列",
+    ),
 ]
 
 

@@ -66,8 +66,8 @@ MUTATIONS = [
     ),
     (
         "M7", "docqa_audit/auditors/claim_audit.py",
-        "            \"年限表述\", \"原文里找不到：\" + \"、\".join(missing[\"年限\"][:5]),\n            model.BLOCKER,",
-        "            \"年限表述\", \"原文里找不到：\" + \"、\".join(missing[\"年限\"][:5]),\n            model.WARN,",
+        '            "年限表述", "原文里找不到：" + _join(missing["年限"], 5),\n            model.BLOCKER,',
+        '            "年限表述", "原文里找不到：" + _join(missing["年限"], 5),\n            model.WARN,',
         "年限虚报从「拦」降成「警」",
     ),
     (
@@ -105,6 +105,30 @@ MUTATIONS = [
         "    if not dl_headers or not md_headers:",
         "    if False:",
         "对比层入口守卫关掉，一边没输出也照出「通过」",
+    ),
+    (
+        "M14", "docqa_audit/auditors/retrieval_audit.py",
+        "        base = base_layer if base_layer in rankings else sorted(names)[0]",
+        "        base = names[0]",
+        "基线退回「文件里第一个出现的层」，结论由行序决定",
+    ),
+    (
+        "M15", "docqa_audit/auditors/retrieval_audit.py",
+        "                absent.append(q[\"id\"])",
+        "                missed.append(q[\"id\"])",
+        "把「这层没给这题」当成「没检索到」，缺一题就报拦",
+    ),
+    (
+        "M16", "docqa_audit/auditors/claim_audit.py",
+        "            missing[\"数字单位\"].append(raw)",
+        "            missing[\"数字\"].append(raw)",
+        "单位对不上被并进「原文里找不到」，措辞指错方向",
+    ),
+    (
+        "M17", "docqa_audit/auditors/claim_audit.py",
+        "        return f\"{head}…（共 {len(items)} 处，这里只列前 {limit} 个）\"",
+        "        return head",
+        "截断的清单不写总数，读的人以为只错八处",
     ),
 ]
 

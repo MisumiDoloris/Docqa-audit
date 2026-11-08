@@ -49,7 +49,8 @@ def _load_jsonl(path):
     return rows
 
 
-def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5), ranking_rows=None):
+def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5), ranking_rows=None,
+          base_layer=None):
     layer = model.LayerResult("检索层")
     chunks = _load_jsonl(chunks_path)
     questions = _load_jsonl(questions_path)
@@ -94,9 +95,14 @@ def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5), ranking_
     for layer_name, per_q in rankings.items():
         hit = {k: 0 for k in ks}
         rr_sum = 0.0
-        missed = []
+        missed, absent = [], []
         for q in questions:
-            ids = per_q.get(q["id"], [])
+            if q["id"] not in per_q:
+                # 这一层没给这道题的排位，是「没取到」，不是「没检索到」。
+                # 当成没命中会报成 BLOCKER，把人指去查切块和原文块，方向整个错。
+                absent.append(q["id"])
+                continue
+            ids = per_q[q["id"]]
             first = None
             for rank, cid in enumerate(ids, 1):
                 if cid in q["gt_ids"]:
@@ -114,7 +120,15 @@ def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5), ranking_
             **{f"hit@{k}": round(hit[k] / n, 3) for k in ks},
             "MRR": round(rr_sum / n, 3),
             "未命中题数": len(missed),
+            "未给题数": len(absent),
         }
+        if absent:
+            layer.add(model.Finding(
+                f"{layer_name}｜缺排位",
+                f"这一层少给了 {len(absent)} 道题的排位（题 {', '.join(map(str, absent[:8]))}）",
+                model.WARN,
+                "指标按全题数算，缺题会把这一层拉低。先查排位导出是不是漏了这几题，别当成检索变差",
+            ))
         if missed:
             layer.add(model.Finding(
                 f"{layer_name}｜题 {', '.join(map(str, missed[:8]))}",
@@ -127,14 +141,16 @@ def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5), ranking_
     # 检索质量的绝对线没有行业基准，定一条线就是编数，所以这里只报改动前后的差。
     names = list(rankings)
     if len(names) > 1:
-        base = names[0]
+        # 基线不能取「文件里第一个出现的层」：同一份数据换个行序，结论就翻过来。
+        # 没指定 base_layer 时按层名排序取第一个，至少是确定的。
+        base = base_layer if base_layer in rankings else sorted(names)[0]
         base_mrr = layer.summary[base]["MRR"]
         base_hit = layer.summary[base].get("hit@1", 0)
-        for name in names[1:]:
+        for name in [x for x in sorted(names) if x != base]:
             m = layer.summary[name]
             d_mrr = round(m["MRR"] - base_mrr, 3)
             d_hit = round(m.get("hit@1", 0) - base_hit, 3)
-            layer.summary[name]["相对" + base] = f"MRR {d_mrr:+.3f} / hit@1 {d_hit:+.3f}"
+            layer.summary[name][f"相对{base}"] = f"MRR {d_mrr:+.3f} / hit@1 {d_hit:+.3f}"
             if d_mrr < 0 or d_hit < 0:
                 layer.add(model.Finding(
                     f"{name} 相比 {base}",

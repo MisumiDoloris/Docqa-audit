@@ -107,14 +107,28 @@ def extract(text):
     return uniq
 
 
+def _join(items, limit=8):
+    """列前 limit 个，超了把总数写出来。只列八个不写总数，读的人会以为只错八处。"""
+    head = "、".join(items[:limit])
+    if len(items) > limit:
+        return f"{head}…（共 {len(items)} 处，这里只列前 {limit} 个）"
+    return head
+
+
 def audit(answer_text, source_text, source_name="原文"):
     layer = model.LayerResult("生成层")
     src_c, src_s = norm_compact(source_text), norm_spaced(source_text)
     claims = extract(answer_text)
 
-    missing = {"年限": [], "日期": [], "编号": [], "数字": []}
+    missing = {"年限": [], "日期": [], "编号": [], "数字": [], "数字单位": []}
     for kind, raw, key, unit in claims:
         if _has_anchor(src_c, src_s, key, unit):
+            continue
+        # 数字在原文里有，只是单位对不上。这跟「原文没这个数」是两回事，
+        # 混成一句「找不到」会把人指去怀疑原文缺数据。
+        if kind == "数字" and unit and \
+                re.search(r"(?<![\d.])" + re.escape(key) + r"(?![\d.])", src_s):
+            missing["数字单位"].append(raw)
             continue
         missing[kind].append(raw)
 
@@ -123,27 +137,34 @@ def audit(answer_text, source_text, source_name="原文"):
 
     if missing["年限"]:
         layer.add(model.Finding(
-            "年限表述", "原文里找不到：" + "、".join(missing["年限"][:5]),
+            "年限表述", "原文里找不到：" + _join(missing["年限"], 5),
             model.BLOCKER,
             "年限最容易被追问也最容易被查穿，要么删掉，要么按原文核准再写",
         ))
     if missing["日期"]:
         layer.add(model.Finding(
-            "日期回源", "原文里找不到：" + "、".join(missing["日期"][:5]),
+            "日期回源", "原文里找不到：" + _join(missing["日期"], 5),
             model.BLOCKER,
             "日期对不上会连带结论一起错，回原文核一遍",
         ))
     if missing["编号"]:
         layer.add(model.Finding(
-            "编号回源", "原文里找不到：" + "、".join(missing["编号"][:8]),
+            "编号回源", "原文里找不到：" + _join(missing["编号"], 8),
             model.BLOCKER,
             "编号张冠李戴是最典型的幻觉，需要逐个人工比对",
         ))
     if missing["数字"]:
         layer.add(model.Finding(
-            "数字回源 🔴", "原文里找不到：" + "、".join(missing["数字"][:8]),
+            "数字回源 🔴", "原文里找不到：" + _join(missing["数字"], 8),
             model.WARN,
-            "标红放行：不拦整段，但这几处必须有人看过再发出去；单位写法不同也会误报，别一概当编造",
+            "标红放行：不拦整段，但这几处必须有人看过再发出去",
+        ))
+    if missing["数字单位"]:
+        layer.add(model.Finding(
+            "数字单位对不上 🔴", "数字在原文里有，但单位不一样：" + _join(missing["数字单位"], 8),
+            model.WARN,
+            "数字对得上、单位对不上，多半是挂到了别的条目上（原文的「3 台」被写成「3 根」）。"
+            "逐条回原文核一遍，别当成误报划掉",
         ))
 
     if not layer.findings:

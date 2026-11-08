@@ -19,9 +19,20 @@ _SEP_LINE = re.compile(r"^\s*\|[\s:\-|]+\|\s*$")
 _NUM = re.compile(r"\d+")
 _MIN_CHARS = 50  # 没表格时整份输出低于这个字数，判「没解出来」，不是「没表」
 
+# 合计、小计这类行出现在首列是正常的，不能当成「序号断行」。
+_SUMMARY_WORDS = ("合计", "小计", "总计", "共", "备注", "说明", "续表", "以下空白")
+
+# Markdown 用反斜杠加竖线表示格子里的竖线，切格前先换掉，切完再换回来。
+_ESCAPED_PIPE = "\x00PIPE\x00"
+
 
 def _cells(line):
-    return [c.strip() for c in line.strip().strip("|").split("|")]
+    body = line.strip().strip("|").replace("\\|", _ESCAPED_PIPE)
+    return [c.strip().replace(_ESCAPED_PIPE, "|") for c in body.split("|")]
+
+
+def _is_summary_row(first_cell):
+    return any(first_cell.startswith(w) for w in _SUMMARY_WORDS)
 
 
 def _table_blocks(lines):
@@ -42,17 +53,32 @@ def audit(text, source_name="parsed.md"):
     layer = model.LayerResult("解析层")
     lines = text.splitlines()
     blocks = _table_blocks(lines)
+    stripped = text.strip()
 
-    if not blocks:
-        layer.summary["表格数"] = 0
-        if len(text.strip()) < _MIN_CHARS:
+    # 先判「有没有东西可查」。没表格、或者表格里一个非空格都没有，
+    # 都是「没取到」，不许走「零发现 → 通过」那条路。
+    content_cells = [c for block in blocks for _no, ln in block
+                     if not _SEP_LINE.match(ln) for c in _cells(ln) if c]
+    if not blocks or not content_cells:
+        layer.summary["表格数"] = len(blocks)
+        layer.status = model.INPUT_INVALID
+        if blocks:
+            layer.note = "表格里所有格子都是空的"
+            layer.add(model.Finding(
+                source_name, "表格里所有格子都是空的，解出来的东西不能用来验收",
+                model.BLOCKER,
+                "空的表骨架不等于解析成功。对照原 PDF 看是这一页本来没内容，还是解析器一个字都没认出来",
+            ))
+        elif len(stripped) < _MIN_CHARS:
+            layer.note = f"整份输出只有 {len(stripped)} 字，低于 {_MIN_CHARS} 字下限"
             layer.add(model.Finding(
                 source_name,
-                f"整份输出只有 {len(text.strip())} 字，低于 {_MIN_CHARS} 字下限",
+                f"整份输出只有 {len(stripped)} 字，低于 {_MIN_CHARS} 字下限",
                 model.BLOCKER,
                 "扫描件很可能一个字都没解出来。输出非空不等于解析成功，必须重跑或换底座",
             ))
         else:
+            layer.note = f"整份输出 {len(stripped)} 字，没有识别到表格"
             layer.add(model.Finding(
                 source_name, "没有识别到任何 Markdown 表格",
                 model.WARN,
@@ -61,14 +87,14 @@ def audit(text, source_name="parsed.md"):
         return layer
 
     empty_ratio_limit = 0.4
-    total_rows = 0
+    total_rows = 0  # 只数数据行，不含表头
 
     for idx, block in enumerate(blocks, 1):
         start_no = block[0][0]
         rows = [(no, ln) for no, ln in block if not _SEP_LINE.match(ln)]
         if not rows:
             continue
-        total_rows += len(rows)
+        total_rows += max(len(rows) - 1, 0)
         where = f"表{idx}（第{start_no}行起，{len(rows)}行）"
 
         widths = {no: len(_cells(ln)) for no, ln in rows}
@@ -115,11 +141,13 @@ def audit(text, source_name="parsed.md"):
             # 「整列空」兜底，不需要单独再查长度。
             seq = [r[0] for r in body if r]
             numeric = sum(1 for v in seq if _NUM.fullmatch(v))
-            if len(seq) >= 3 and 0 < numeric < len(seq):
-                bad_rows = [i + 2 for i, v in enumerate(seq) if v and not _NUM.fullmatch(v)]
+            # 合计、小计这类行首列本来就不是序号，先摘掉再判断行。
+            bad = [(i, v) for i, v in enumerate(seq)
+                   if v and not _NUM.fullmatch(v) and not _is_summary_row(v)]
+            if len(seq) >= 3 and numeric and bad:
                 layer.add(model.Finding(
-                    where, f"首列序号断行，第 {', '.join(map(str, bad_rows[:5]))} 行的首列不是序号："
-                           + "、".join(f"「{v}」" for v in seq if v and not _NUM.fullmatch(v))[:60],
+                    where, f"首列序号断行，第 {', '.join(map(str, [i + 2 for i, _v in bad][:5]))} 行的首列不是序号："
+                           + "、".join(f"「{v}」" for _i, v in bad)[:60],
                     model.BLOCKER,
                     "一行被切成两行，下半截跑到下一行去了，这张表必须人看着重新对齐",
                 ))

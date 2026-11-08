@@ -19,12 +19,25 @@ def render(layers, title="验收报告", meta=None):
     blockers = sum(l.count(model.BLOCKER) for l in layers)
     warns = sum(l.count(model.WARN) for l in layers)
     infos = sum(l.count(model.INFO) for l in layers)
-    overall = "不能交付" if blockers else ("能交付，但有要人看的地方" if warns else "通过")
+    # 没跑完的层单独算一档：拦优先，其次未完成，再看警。
+    # 少了这一档，配置里漏掉一层就会照出「通过」，签收的人看不出缺了两层。
+    gaps = [l.name for l in layers if l.status in (model.NOT_RUN, model.INPUT_INVALID)]
+    if blockers:
+        overall = "不能交付"
+    elif gaps:
+        overall = "未完成验收"
+    elif warns:
+        overall = "能交付，但有要人看的地方"
+    else:
+        overall = "通过"
+    out.append(f"**结论：{overall}**（拦 {blockers} 条，警 {warns} 条，记 {infos} 条）")
+    if gaps:
+        out.append("")
+        out.append(f"本次没有跑完的层：{'、'.join(gaps)}。四层没跑齐，不算通过。")
     out += [
-        f"**结论：{overall}**（拦 {blockers} 条，警 {warns} 条，记 {infos} 条）",
         "",
-        "| 层 | 结论 | 拦 | 警 | 记 | 摘要 |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| 层 | 状态 | 结论 | 拦 | 警 | 记 | 摘要 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     def _fmt(v):
         if isinstance(v, dict):
@@ -33,13 +46,15 @@ def render(layers, title="验收报告", meta=None):
 
     for l in layers:
         summary = "；".join(f"{k} {_fmt(v)}" for k, v in l.summary.items()) or "—"
+        status = l.status + (f"｜{l.note}" if l.note else "")
         out.append(
-            f"| {l.name} | {l.verdict} | {l.count(model.BLOCKER)} | {l.count(model.WARN)} | {l.count(model.INFO)} | {summary} |"
+            f"| {l.name} | {status} | {l.verdict} | {l.count(model.BLOCKER)} | {l.count(model.WARN)} | {l.count(model.INFO)} | {summary} |"
         )
     out.append("")
 
     for l in layers:
-        out += [f"## {l.name}", "", f"结论：**{l.verdict}**", ""]
+        out += [f"## {l.name}", "", f"状态：{l.status}" + (f"（{l.note}）" if l.note else ""),
+                "", f"结论：**{l.verdict}**", ""]
         items = l.sorted_findings()
         if not items:
             out += ["没有发现问题。", ""]

@@ -30,7 +30,9 @@ _SEP_LINE = re.compile(r"^\s*\|[\s:\-|]+\|\s*$")
 _TABLE_LINE = re.compile(r"^\s*\|")
 # 数据里的型号、编号：字母打头带数字，长度四个字符以上。纯数字太吵，不比。
 # 字母部分允许只有一个字母——华为那批型号就是 S5735、S16700、AP4050 这种。
-_DATA_TOKEN = re.compile(r"[A-Za-z]{1,}[-_]?\d[\w\-./]*")
+# 尾部不用 \w：Python 的 \w 认中文，型号后面紧跟汉字会被整串吞进来，
+# 回原文就找不到，真型号被判成丢数据。
+_DATA_TOKEN = re.compile(r"[A-Za-z]{1,}[-_]?\d[A-Za-z0-9_\-./]*")
 
 
 def _cells(line):
@@ -111,7 +113,26 @@ def reblock_markitdown(lines):
 
 def _is_field_name(s):
     s = s.strip()
-    return bool(s) and len(s) <= 6 and not re.search(r"\d", s)
+    return bool(s) and len(s) <= 12 and not re.search(r"\d", s)
+
+
+def _same_field(a, b):
+    """两个表头字段是不是同一列。
+
+    名字长短不一是常态：docling 抄成「设备名称及规格型号」，markitdown 抄成
+    「设备名称」，指的是同一列。严格相等会把这种情况报成「丢了字段 + 多出字段」，
+    一次误拦两份都解析对的资料。
+
+    但不能放太松：「CloudEngine」是「CloudEngine S16700-4」的前缀，把型号吃掉了，
+    这两格不是同一列——真错正是 markitdown 把型号名丢了，认成同列就等于放过它。
+    判据是前缀之外那截不含数字：含数字说明多出来的是型号、规格、尺寸这类实体值。
+    """
+    if a == b:
+        return True
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    if len(short) < 3 or short not in long_:
+        return False
+    return not re.search(r"\d", long_[len(short):])
 
 
 def _dl_table_shape(t):
@@ -235,6 +256,9 @@ def audit(docling_tables, markitdown_text, source_name="对比层"):
     layer.summary["markitdown 逻辑表"] = len(md_headers)
 
     if not dl_headers or not md_headers:
+        missing_side = "docling" if not dl_headers else "markitdown"
+        layer.status = model.INPUT_INVALID
+        layer.note = f"{missing_side} 那一边没有可对比的表头"
         layer.add(model.Finding(
             source_name, "有一边的输出里没有可对比的表头",
             model.WARN,
@@ -258,16 +282,29 @@ def audit(docling_tables, markitdown_text, source_name="对比层"):
 
     paired = 0
     cols_gap = 0
+    skipped = 0
     for idx, d in enumerate(dl_headers, 1):
         if not d:
+            skipped += 1
             continue
         if idx - 1 not in assigned:
+            dshape = dl_shapes[idx - 1]
             layer.add(model.Finding(
                 source_name,
                 f"docling 逻辑表{idx}（{'、'.join(d)[:40]}）在 markitdown 那边没有对应的表",
                 model.INFO,
                 "一对一配对后剩下这张，可能 markitdown 整张没解出来，也可能被并进了别的碎片",
             ))
+            # 整张表都没配上，表里的型号更没人查。丢整表比丢一列重，不能只记一笔就过去。
+            missing = missing_data_tokens(dshape["text"], md_all)
+            if missing:
+                layer.add(model.Finding(
+                    source_name,
+                    f"逻辑表{idx} 整张在 markitdown 那边没有对应表，表里 {len(missing)} 个型号或编号"
+                    "在整份输出里也找不到：" + "、".join(f"「{x}」" for x in missing[:5]),
+                    model.WARN,
+                    "整张表没解出来比丢一列更重。要么别用 markitdown 这份归档，要么人工把这张表补进去",
+                ))
             continue
         best, score = assigned[idx - 1]
         m = md_headers[best]
@@ -277,8 +314,10 @@ def audit(docling_tables, markitdown_text, source_name="对比层"):
 
         d_keys = {_norm(x): x for x in d if x}
         m_keys = {_norm(x): x for x in m if x}
-        lost = [orig for k, orig in d_keys.items() if k not in m_keys]
-        extra = [orig for k, orig in m_keys.items() if k not in d_keys]
+        lost = [orig for k, orig in d_keys.items()
+                if k not in m_keys and not any(_same_field(k, mk) for mk in m_keys)]
+        extra = [orig for k, orig in m_keys.items()
+                 if k not in d_keys and not any(_same_field(k, dk) for dk in d_keys)]
 
         if lost:
             layer.add(model.Finding(
@@ -338,6 +377,16 @@ def audit(docling_tables, markitdown_text, source_name="对比层"):
                 "这些串在 docling 的数据行里出现过，整份 markitdown 输出里都没有。"
                 "可能是整行被丢，也可能是写法差（空格、单位符号）。人工核对一下",
             ))
+
+    if skipped:
+        layer.status = model.PARTIAL
+        layer.note = f"{skipped} 张表的表头没认出来，没有比过"
+        layer.add(model.Finding(
+            source_name,
+            f"{skipped} 张 docling 表的表头没认出来，这几张没有参与对比",
+            model.WARN,
+            "表头认不出来就没法比字段和列数，这几张等于没查。对照原 PDF 看表头是不是被合并成一行长名字了",
+        ))
 
     layer.summary["配上"] = paired
     layer.summary["列数不一致"] = cols_gap

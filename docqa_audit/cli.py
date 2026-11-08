@@ -23,9 +23,12 @@ def _read(path):
 def run(config_path):
     cfg = cfg_mod.load(config_path)
     layers = []
+    from . import model
 
     if "parse" in cfg:
         layers.append(parse_audit.audit(_read(cfg["parse"]["file"]), cfg["parse"]["file"].rsplit("/", 1)[-1]))
+    else:
+        layers.append(model.LayerResult("解析层", status=model.NOT_RUN, note="配置里没有 parse 这一段"))
 
     if "retrieval" in cfg:
         r = cfg["retrieval"]
@@ -40,6 +43,8 @@ def run(config_path):
             ks=tuple(r.get("ks", (1, 3, 5))),
             ranking_rows=rows,
         ))
+    else:
+        layers.append(model.LayerResult("检索层", status=model.NOT_RUN, note="配置里没有 retrieval 这一段"))
 
     if "claims" in cfg:
         c = cfg["claims"]
@@ -47,6 +52,8 @@ def run(config_path):
         if c.get("soft_judge"):
             from .auditors import judge_audit
             layers.append(judge_audit.judge(_read(c["answer"]), _read(c["source"])))
+    else:
+        layers.append(model.LayerResult("生成层", status=model.NOT_RUN, note="配置里没有 claims 这一段"))
 
     if "cross" in cfg:
         import json as _json
@@ -55,8 +62,10 @@ def run(config_path):
         with open(c["docling_json"], encoding="utf-8") as f:
             docling_tables = _json.load(f)["tables"]
         layers.append(cross_audit.audit(docling_tables, _read(c["markitdown_md"])))
+    else:
+        layers.append(model.LayerResult("对比层", status=model.NOT_RUN, note="配置里没有 cross 这一段"))
 
-    if not layers:
+    if all(l.status == model.NOT_RUN for l in layers):
         print("配置里没有可跑的层，检查 parse / retrieval / claims / cross 四段", file=sys.stderr)
         return 2
 

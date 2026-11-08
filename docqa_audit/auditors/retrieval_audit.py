@@ -57,8 +57,18 @@ def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5), ranking_
     layer.summary["切块数"] = len(chunks)
     layer.summary["题数"] = len(questions)
 
+    if not questions:
+        layer.status = model.INPUT_INVALID
+        layer.note = "题集是空的，一题都没判"
+        layer.add(model.Finding(
+            "题集", "题集是空的，这一层一题都没判", model.WARN,
+            "检索质量的结论要有题撑着。出 10 到 20 道题、标好 gt_ids 再跑",
+        ))
+        return layer
+
     by_id = {c["id"]: c for c in chunks}
     rankings = {}
+    gave_rows = ranking_rows is not None
     if ranking_rows:
         for row in ranking_rows:
             rankings.setdefault(row.get("layer", "default"), {})[row["qid"]] = row["ids"]
@@ -67,6 +77,16 @@ def audit(chunks_path, questions_path, ranking_path=None, ks=(1, 3, 5), ranking_
             rankings.setdefault(row.get("layer", "default"), {})[row["qid"]] = row["ids"]
 
     if not rankings:
+        if gave_rows or ranking_path:
+            # 给了排位却读不出东西，不许悄悄换成内置基线。
+            # 换了就会报一组漂亮的满分，而使用者的排位根本没跑过。
+            layer.status = model.INPUT_INVALID
+            layer.note = "给了排位文件，但里面一行排位都没有"
+            layer.add(model.Finding(
+                "排位文件", "给了排位但一行都读不出来", model.WARN,
+                "这一层没有按你的排位跑过，也没有换成内置基线。查一下导出是不是写盘中断、字段名写错，或者路径指错了文件",
+            ))
+            return layer
         rankings = {}
         for q in questions:
             rankings.setdefault("内置基线", {})[q["id"]] = baseline_rank(q["q"], chunks)

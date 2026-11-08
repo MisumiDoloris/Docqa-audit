@@ -36,8 +36,8 @@ MUTATIONS = [
     ),
     (
         "M2", "docqa_audit/auditors/parse_audit.py",
-        "if len(seq) >= 3 and 0 < numeric < len(seq):",
-        "if False and len(seq) >= 3:",
+        "            if len(seq) >= 3 and numeric and bad:",
+        "            if False:",
         "关掉首列序号断行检测，真实解析器的烂表应当被抓出来",
     ),
     (
@@ -78,8 +78,8 @@ MUTATIONS = [
     ),
     (
         "M9", "docqa_audit/auditors/cross_audit.py",
-        '        missing = missing_data_tokens(dshape["text"], md_all)',
-        '        missing = missing_data_tokens(dshape["text"], mshape["text"])',
+        '        # 数据内容：型号、编号这类字母数字串，在整份 markitdown 输出里一个都找不到。\n        missing = missing_data_tokens(dshape["text"], md_all)',
+        '        # 数据内容：型号、编号这类字母数字串，在整份 markitdown 输出里一个都找不到。\n        missing = missing_data_tokens(dshape["text"], mshape["text"])',
         "型号搜索域从整份输出收回单张表，正是真数据假警的根因",
     ),
     (
@@ -87,6 +87,24 @@ MUTATIONS = [
         "    for score, i, j in scored:\n        if i in assigned or j in used_md:\n            continue",
         "    for score, i, j in scored:\n        if i in assigned:\n            continue",
         "一对一配对退化成最近邻，会造出根本不存在的丢列",
+    ),
+    (
+        "M11", "docqa_audit/report.py",
+        "    elif gaps:",
+        "    elif False:",
+        "没跑完的层不再影响顶层结论，漏跑两层也会照出「通过」",
+    ),
+    (
+        "M12", "docqa_audit/auditors/parse_audit.py",
+        "    if not blocks or not content_cells:",
+        "    if not blocks:",
+        "全空的表格走回「零发现」老路，空表报通过",
+    ),
+    (
+        "M13", "docqa_audit/auditors/cross_audit.py",
+        "    if not dl_headers or not md_headers:",
+        "    if False:",
+        "对比层入口守卫关掉，一边没输出也照出「通过」",
     ),
 ]
 

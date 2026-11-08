@@ -22,7 +22,7 @@ import re
 from .. import model
 
 _DATE = re.compile(r"\d{4}\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*日?")
-_CODE = re.compile(r"[A-Za-z]{1,6}[-_]?\d[\w\-./]{2,}")
+_CODE = re.compile(r"[A-Za-z]{1,6}[-_]?\d[A-Za-z0-9_\-./]{2,}")
 _CODE_DIGIT_FIRST = re.compile(r"\d{2,}-[A-Za-z0-9]{2,}-?\d{2,}")
 _NUM_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*([^\d\s]{0,3})")
 _YEAR = re.compile(r"(\d+)\s*年(?:以上|多)?(?:经验|经历)?")
@@ -53,10 +53,15 @@ def _unit_of(tail):
 
 def _has_anchor(src_compact, src_spaced, key, unit):
     if not unit:
-        if key in src_compact:
+        # 先按边界找一次，"5" 不能命中 "550"。
+        # 纯数字（含小数）到这儿就结束，不许退回子串比对，
+        # 否则 「1500」会在「15000」里算命中，编造的数字被放行。
+        if re.search(r"(?<![\d.])" + re.escape(key) + r"(?![\d.])", src_spaced):
             return True
-        # 没单位的数字也要按边界找一次，避免 "5" 命中 "550"
-        return bool(re.search(r"(?<![\d.])" + re.escape(key) + r"(?![\d.])", src_spaced))
+        if re.fullmatch(r"[\d.]+", key):
+            return False
+        # 编号、日期这类整串不受数字边界限制，退回子串比。
+        return key in src_compact
     pat = r"(?<![\d.])" + re.escape(key) + r"(?![\d.])"
     for m in re.finditer(pat, src_spaced):
         tail = src_spaced[m.end():m.end() + 4].replace(" ", "")
@@ -142,5 +147,14 @@ def audit(answer_text, source_text, source_name="原文"):
         ))
 
     if not layer.findings:
-        layer.add(model.Finding(source_name, "全部数字、编号、日期都能回原文找到锚点", model.INFO, ""))
+        if claims:
+            layer.add(model.Finding(source_name, "全部数字、编号、日期都能回原文找到锚点", model.INFO, ""))
+        else:
+            # 一个数都没查，不能写「全部都能找到」。那句话是字面谎言。
+            layer.add(model.Finding(
+                source_name,
+                "答案里没有检出任何数字、编号、日期，这一层没有校验任何东西",
+                model.INFO,
+                "答案本来就没有可回源的内容时属正常；但原文有数字而答案一个都没有，说明答案不是从原文来的",
+            ))
     return layer
